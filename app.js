@@ -20,7 +20,7 @@ const ocrText = document.querySelector('#ocr-text');
 const numberFormatter = new Intl.NumberFormat('ja-JP');
 let currentReadId = 0;
 
-const TESSERACT_VERSION = '5';
+const TESSERACT_VERSION = '5.1.1';
 const TESSERACT_MODULE_URL = `https://cdn.jsdelivr.net/npm/tesseract.js@${TESSERACT_VERSION}/dist/tesseract.esm.min.js`;
 let tesseractLoader;
 
@@ -30,16 +30,32 @@ const tesseractWorkerOptions = {
   langPath: 'https://tessdata.projectnaptha.com/4.0.0',
 };
 
+const logTesseractModuleShape = (module) => {
+  console.log('[Tesseract.js dynamic import] module keys:', Object.keys(module || {}));
+  console.log('[Tesseract.js dynamic import] module:', module);
+  console.log('[Tesseract.js dynamic import] default export:', module?.default);
+  console.log('[Tesseract.js dynamic import] globalThis.Tesseract:', globalThis.Tesseract);
+};
+
 const resolveTesseractCreateWorker = (module) => {
-  const createWorker =
-    module?.createWorker ||
-    module?.default?.createWorker ||
-    module?.Tesseract?.createWorker;
+  logTesseractModuleShape(module);
+
+  const candidates = [
+    ['named export', module?.createWorker],
+    ['default export object', module?.default?.createWorker],
+    ['default export function', module?.default],
+    ['module.Tesseract', module?.Tesseract?.createWorker],
+    ['nested default export object', module?.default?.default?.createWorker],
+    ['globalThis.Tesseract', globalThis.Tesseract?.createWorker],
+  ];
+  const [source, createWorker] = candidates.find(([, candidate]) => typeof candidate === 'function') || [];
 
   if (typeof createWorker !== 'function') {
+    console.error('[Tesseract.js dynamic import] createWorker was not found in module/default/global candidates.');
     throw new Error('Tesseract.jsのcreateWorkerを利用できません。');
   }
 
+  console.log(`[Tesseract.js dynamic import] createWorker source: ${source}`);
   return createWorker;
 };
 
