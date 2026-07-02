@@ -31,9 +31,29 @@
           <strong>PDFファイルを選択、またはここにドラッグ</strong>
           <small>ブラウザ内で処理する想定です。読み取り結果は次の表に表示します。</small>
         </label>
-        <div class="file-meta">
-          <span>読み込み状態</span>
-          <strong id="file-status">未選択</strong>
+        <div class="file-meta" aria-live="polite">
+          <div class="file-meta__summary">
+            <span>読み込み状態</span>
+            <strong id="file-status">未選択</strong>
+          </div>
+          <dl class="file-details">
+            <div>
+              <dt>ファイル名</dt>
+              <dd id="file-name">未選択</dd>
+            </div>
+            <div>
+              <dt>ファイルサイズ</dt>
+              <dd id="file-size">-</dd>
+            </div>
+            <div>
+              <dt>ページ数</dt>
+              <dd id="file-pages">-</dd>
+            </div>
+            <div>
+              <dt>読み取り準備状態</dt>
+              <dd id="file-ready">PDFを選択すると読み取り準備を確認します</dd>
+            </div>
+          </dl>
         </div>
       </section>
 
