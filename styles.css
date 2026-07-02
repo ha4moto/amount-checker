@@ -132,12 +132,48 @@ button, select {
 }
 
 .file-meta {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  gap: 14px;
   margin-top: 14px;
   color: var(--muted);
 }
+
+.file-meta__summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
 .file-meta strong { color: var(--text); }
+
+.file-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.file-details div {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.file-details dt {
+  margin-bottom: 6px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.file-details dd {
+  margin: 0;
+  color: var(--text);
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
 
 .rule-grid {
   display: grid;
@@ -209,7 +245,7 @@ th { color: var(--muted); font-size: 0.85rem; }
   .app-header { flex-direction: column; align-items: flex-start; }
   .layout { grid-template-columns: 1fr; }
   .upload-panel, .settings-panel, .table-panel, .result-panel { grid-column: 1; grid-row: auto; }
-  .rule-grid { grid-template-columns: 1fr; }
+  .rule-grid, .file-details { grid-template-columns: 1fr; }
 }
 
 .status-hero {
