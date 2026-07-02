@@ -19,16 +19,34 @@ const ocrText = document.querySelector('#ocr-text');
 
 const numberFormatter = new Intl.NumberFormat('ja-JP');
 let currentReadId = 0;
+
+const TESSERACT_VERSION = '5';
+const TESSERACT_MODULE_URL = `https://cdn.jsdelivr.net/npm/tesseract.js@${TESSERACT_VERSION}/dist/tesseract.esm.min.js`;
 let tesseractLoader;
 
-const loadTesseractCreateWorker = async () => {
-  tesseractLoader ??= import('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.esm.min.js')
-    .then((module) => {
-      if (typeof module.createWorker !== 'function') {
-        throw new Error('Tesseract.jsのcreateWorkerを利用できません。');
-      }
+const tesseractWorkerOptions = {
+  workerPath: `https://cdn.jsdelivr.net/npm/tesseract.js@${TESSERACT_VERSION}/dist/worker.min.js`,
+  corePath: `https://cdn.jsdelivr.net/npm/tesseract.js-core@${TESSERACT_VERSION}`,
+  langPath: 'https://tessdata.projectnaptha.com/4.0.0',
+};
 
-      return module.createWorker;
+const resolveTesseractApi = (module) => {
+  const createWorker = module.createWorker || module.default?.createWorker || globalThis.Tesseract?.createWorker;
+  const oem = module.OEM?.LSTM_ONLY || module.default?.OEM?.LSTM_ONLY || globalThis.Tesseract?.OEM?.LSTM_ONLY;
+
+  if (typeof createWorker !== 'function') {
+    throw new Error('Tesseract.jsのcreateWorkerを利用できません。');
+  }
+
+  return { createWorker, oem };
+};
+
+const loadTesseractApi = async () => {
+  tesseractLoader ??= import(TESSERACT_MODULE_URL)
+    .then(resolveTesseractApi)
+    .catch((error) => {
+      tesseractLoader = undefined;
+      throw error;
     });
 
   return tesseractLoader;
@@ -92,18 +110,18 @@ const runOcrOnPreviewCanvas = async (readId) => {
   ocrStatus.textContent = 'OCRで文字を読み取っています';
   ocrText.textContent = 'OCRで文字を読み取っています...';
 
-  let createWorker;
+  let tesseractApi;
   let worker;
 
   try {
-    createWorker = await loadTesseractCreateWorker();
+    tesseractApi = await loadTesseractApi();
   } catch (error) {
     if (readId !== currentReadId) {
       return;
     }
 
     ocrStatus.textContent = 'OCRライブラリを読み込めません';
-    ocrText.textContent = `OCRライブラリを読み込めません。PDFアップロード、ファイル情報、ページ数、画像プレビューは利用できます。詳細: ${getErrorMessage(error)}`;
+    ocrText.textContent = `OCRライブラリを読み込めません。PDFアップロード、ファイル情報、ページ数、画像プレビュー、PDFテキスト抽出は利用できます。詳細: ${getErrorMessage(error)}`;
     return;
   }
 
@@ -112,7 +130,7 @@ const runOcrOnPreviewCanvas = async (readId) => {
   }
 
   try {
-    worker = await createWorker('jpn+eng');
+    worker = await tesseractApi.createWorker('jpn+eng', tesseractApi.oem, tesseractWorkerOptions);
     const { data } = await worker.recognize(previewCanvas);
 
     if (readId !== currentReadId) {
