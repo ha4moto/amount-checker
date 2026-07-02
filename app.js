@@ -30,15 +30,22 @@ const tesseractWorkerOptions = {
   langPath: 'https://tessdata.projectnaptha.com/4.0.0',
 };
 
+const resolveTesseractCreateWorker = (module) => {
+  const createWorker =
+    module?.createWorker ||
+    module?.default?.createWorker ||
+    module?.Tesseract?.createWorker;
+
+  if (typeof createWorker !== 'function') {
+    throw new Error('Tesseract.jsのcreateWorkerを利用できません。');
+  }
+
+  return createWorker;
+};
+
 const loadTesseractCreateWorker = async () => {
   tesseractLoader ??= import(TESSERACT_MODULE_URL)
-    .then((module) => {
-      if (typeof module.createWorker !== 'function') {
-        throw new Error('Tesseract.jsのcreateWorkerを利用できません。');
-      }
-
-      return module.createWorker;
-    })
+    .then(resolveTesseractCreateWorker)
     .catch((error) => {
       tesseractLoader = undefined;
       throw error;
