@@ -28,6 +28,8 @@ https://<GitHubユーザー名またはOrganization名>.github.io/amount-checker
 - `.github/workflows/pages.yml`: `main` / `master` への push または手動実行で、リポジトリ直下をGitHub Pagesへデプロイします。
 - `.nojekyll`: GitHub Pagesで静的ファイルをそのまま配信するための空ファイルです。
 
+公開対象はリポジトリ直下です。`index.html`、`styles.css`、`app.js` をそのまま配信するため、ビルド手順は不要です。
+
 ## アプリの構成
 
 - `index.html`: UI本体です。
