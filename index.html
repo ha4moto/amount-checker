@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>金額チェッカー</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">Amount Checker</p>
+        <h1>金額チェッカー</h1>
+        <p class="lead">請求書PDFの明細・小計・消費税・合計を再計算し、正しい場合は大きく「正しい」、間違いがある場合は理由と場所を分かりやすく指摘します。</p>
+      </div>
+      <div class="status-hero status-hero--ok" aria-label="総合判定サンプル">
+        <span>総合判定</span>
+        <strong>正しい！</strong>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="panel upload-panel" aria-labelledby="upload-title">
+        <div class="section-heading">
+          <p class="step">Step 1</p>
+          <h2 id="upload-title">PDFを読み込む</h2>
+        </div>
+        <label class="drop-zone" for="pdf-file">
+          <input id="pdf-file" type="file" accept="application/pdf" />
+          <span class="drop-icon">PDF</span>
+          <strong>PDFファイルを選択、またはここにドラッグ</strong>
+          <small>ブラウザ内で処理する想定です。読み取り結果は次の表に表示します。</small>
+        </label>
+        <div class="file-meta">
+          <span>読み込み状態</span>
+          <strong id="file-status">未選択</strong>
+        </div>
+      </section>
+
+      <section class="panel settings-panel" aria-labelledby="settings-title">
+        <div class="section-heading">
+          <p class="step">Step 2</p>
+          <h2 id="settings-title">項目推測と計算ルール</h2>
+        </div>
+        <div class="rule-grid">
+          <article class="rule-card">
+            <span>計算パターン</span>
+            <strong>自動判定</strong>
+            <small>明細の列から「数量×日数×単価」「数量×単価」を推測</small>
+          </article>
+          <article class="rule-card">
+            <span>消費税率</span>
+            <strong>請求書から読み取り</strong>
+            <small>10%・8%・非課税を行単位または税率表から判定</small>
+          </article>
+          <article class="rule-card">
+            <span>端数処理</span>
+            <strong>請求書に合わせる</strong>
+            <small>修正は不要。読み取った請求書の結果に合わせて検証</small>
+          </article>
+        </div>
+        <div class="field-map">
+          <span>推測項目</span>
+          <div class="chips">
+            <button type="button">品目</button>
+            <button type="button">数量</button>
+            <button type="button">日数</button>
+            <button type="button">単価</button>
+            <button type="button">金額</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel table-panel" aria-labelledby="table-title">
+        <div class="section-heading with-action">
+          <div>
+            <p class="step">Step 3</p>
+            <h2 id="table-title">読み取り表データ（サンプル請求書形式）</h2>
+          </div>
+          <button class="secondary-button" type="button">再計算</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>項目</th>
+                <th>数量</th>
+                <th>日数</th>
+                <th>単価</th>
+                <th>請求金額</th>
+                <th>再計算</th>
+                <th>判定</th>
+                <th>指摘</th>
+              </tr>
+            </thead>
+            <tbody id="preview-table">
+              <tr>
+                <td>0.25後方小旋回RMLクレーン</td>
+                <td>1</td>
+                <td>9</td>
+                <td>¥9,000</td>
+                <td>¥81,000</td>
+                <td>¥81,000</td>
+                <td><span class="badge ok">正しい！</span></td>
+                <td>数量×日数×単価が一致しています。</td>
+              </tr>
+              <tr class="mismatch">
+                <td>サービス料</td>
+                <td>1</td>
+                <td>11</td>
+                <td>¥650</td>
+                <td class="error-cell">¥7,000</td>
+                <td>¥7,150</td>
+                <td><span class="badge ng">間違い</span></td>
+                <td class="issue-text">請求金額が ¥150 少ないです。正しくは ¥7,150 です。</td>
+              </tr>
+              <tr>
+                <td>基本管理料</td>
+                <td>1</td>
+                <td>-</td>
+                <td>¥2,200</td>
+                <td>¥2,200</td>
+                <td>¥2,200</td>
+                <td><span class="badge ok">正しい！</span></td>
+                <td>数量×単価が一致しています。</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <aside class="panel result-panel" aria-labelledby="result-title">
+        <div class="section-heading">
+          <p class="step">Step 4</p>
+          <h2 id="result-title">チェック結果</h2>
+        </div>
+        <div class="verdict verdict--ng">
+          <span>判定</span>
+          <strong>間違いがあります</strong>
+          <p>赤い行を確認してください。修正入力は不要で、間違いの場所と理由だけを表示します。</p>
+        </div>
+        <div class="verdict verdict--ok">
+          <span>全一致の場合</span>
+          <strong>正しい！</strong>
+          <p>明細・小計・消費税・合計が一致した場合は、画面全体で大きく通知します。</p>
+        </div>
+        <div class="summary-cards">
+          <article>
+            <span>小計</span>
+            <strong>¥90,350</strong>
+          </article>
+          <article>
+            <span>消費税</span>
+            <strong>¥9,035</strong>
+          </article>
+          <article>
+            <span>合計</span>
+            <strong>¥99,385</strong>
+          </article>
+        </div>
+        <ul class="result-list">
+          <li class="issue">2行目「サービス料」: 請求金額 ¥7,000、再計算 ¥7,150。差額は ¥150 です。</li>
+          <li class="ok-text">その他の明細・小計・消費税・合計は一致しています。</li>
+        </ul>
+      </aside>
+    </main>
+
+    <section class="questions" aria-labelledby="questions-title">
+      <h2 id="questions-title">次の段階に進む前に確認したいこと</h2>
+      <ol>
+        <li>添付いただいた太陽建機レンタル形式のように、複数ページの請求書を1つの合計としてチェックする想定でよいですか？</li>
+        <li>間違いの指摘は「差額」「正しい金額」「計算式」の3点を表示する形でよいですか？</li>
+        <li>正しい場合の派手な表示は、画面上部の大きな緑バナーと結果欄の両方に出す形でよいですか？</li>
+      </ol>
+    </section>
+
+    <script src="app.js"></script>
+  </body>
+</html>
