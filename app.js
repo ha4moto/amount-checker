@@ -1,5 +1,4 @@
 import { GlobalWorkerOptions, getDocument } from 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.mjs';
-
 GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.mjs';
 
 const fileInput = document.querySelector('#pdf-file');
@@ -14,13 +13,36 @@ const textStatus = document.querySelector('#text-status');
 const previewStatus = document.querySelector('#preview-status');
 const previewCanvas = document.querySelector('#pdf-preview');
 const previewPlaceholder = document.querySelector('#preview-placeholder');
+const ocrStatus = document.querySelector('#ocr-status');
+const ocrText = document.querySelector('#ocr-text');
 
 const numberFormatter = new Intl.NumberFormat('ja-JP');
+const tesseractModuleUrl = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.esm.min.js';
 let currentReadId = 0;
+
+const getErrorMessage = (error) => error?.message || String(error) || '不明なエラー';
+
+class OcrLibraryLoadError extends Error {
+  constructor(error) {
+    super(`OCRライブラリを読み込めませんでした: ${getErrorMessage(error)}`);
+    this.name = 'OcrLibraryLoadError';
+  }
+}
+
+const loadTesseractCreateWorker = () => import(tesseractModuleUrl)
+  .then(({ createWorker }) => createWorker)
+  .catch((error) => {
+    throw new OcrLibraryLoadError(error);
+  });
 
 const resetExtractedText = () => {
   textStatus.textContent = 'PDFを選択すると、ブラウザ内で抽出したテキストを表示します。';
   extractedText.textContent = 'まだPDFが選択されていません。';
+};
+
+const resetOcr = () => {
+  ocrStatus.textContent = 'PDFを選択すると、1ページ目の画像プレビューをブラウザ内OCRで読み取ります。';
+  ocrText.textContent = 'まだPDFが選択されていません。';
 };
 
 const resetPreview = () => {
@@ -40,6 +62,7 @@ const resetFileMeta = () => {
   fileReady.textContent = 'PDFを選択すると読み取り準備を確認します';
   resetExtractedText();
   resetPreview();
+  resetOcr();
 };
 
 const formatFileSize = (bytes) => {
@@ -64,9 +87,42 @@ const formatPageText = (pageNumber, textContent) => {
   return [`--- ${pageNumber}ページ ---`, pageText || '（テキストを抽出できませんでした）'].join('\n');
 };
 
-const renderFirstPagePreview = async (pdf) => {
+const runOcrOnPreviewCanvas = async (readId) => {
+  ocrStatus.textContent = 'OCRで文字を読み取っています';
+  ocrText.textContent = 'OCRで文字を読み取っています...';
+
+  let worker;
+
+  try {
+    const createWorker = await loadTesseractCreateWorker();
+    worker = await createWorker('jpn+eng');
+    const { data } = await worker.recognize(previewCanvas);
+
+    if (readId !== currentReadId) {
+      return;
+    }
+
+    ocrStatus.textContent = 'OCR読み取り完了';
+    ocrText.textContent = data.text || 'OCRで文字を読み取れませんでした。';
+  } catch (error) {
+    if (readId !== currentReadId) {
+      return;
+    }
+
+    ocrStatus.textContent = 'OCR読み取り失敗';
+    ocrText.textContent = `OCRエラー: ${getErrorMessage(error)}`;
+  } finally {
+    if (worker) {
+      await worker.terminate().catch(() => undefined);
+    }
+  }
+};
+
+const renderFirstPagePreview = async (pdf, readId) => {
   previewStatus.textContent = 'PDFページを画像化しています';
   previewPlaceholder.textContent = 'PDFページを画像化しています';
+  ocrStatus.textContent = 'PDF画像プレビューの準備完了後にOCRを実行します。';
+  ocrText.textContent = 'OCR待機中...';
   previewPlaceholder.hidden = false;
   previewCanvas.hidden = true;
 
@@ -85,15 +141,17 @@ const renderFirstPagePreview = async (pdf) => {
   previewCanvas.hidden = false;
   previewPlaceholder.hidden = true;
   previewStatus.textContent = 'PDF画像化完了';
+
 };
 
-const extractPdfTextAndRenderPreview = async (file) => {
+const extractPdfTextAndRenderPreview = async (file, readId) => {
   const buffer = await file.arrayBuffer();
   const pdf = await getDocument({ data: buffer }).promise;
   const pageTexts = [];
 
   try {
-    await renderFirstPagePreview(pdf);
+    await renderFirstPagePreview(pdf, readId);
+    void runOcrOnPreviewCanvas(readId);
 
     for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
       const page = await pdf.getPage(pageNumber);
@@ -126,6 +184,8 @@ const updateFileMeta = async (file) => {
     textStatus.textContent = 'PDF以外のファイルは読み込めません。';
     previewStatus.textContent = 'PDF以外のファイルは画像化できません。';
     previewPlaceholder.textContent = 'PDFファイルを選択してください。';
+    ocrStatus.textContent = 'PDF以外のファイルはOCRできません。';
+    ocrText.textContent = 'PDFファイルを選択してください。';
     return;
   }
 
@@ -139,9 +199,11 @@ const updateFileMeta = async (file) => {
   extractedText.textContent = '抽出中...';
   previewStatus.textContent = 'PDFページを画像化しています';
   previewPlaceholder.textContent = 'PDFページを画像化しています';
+  ocrStatus.textContent = 'PDF画像プレビューの準備完了後にOCRを実行します。';
+  ocrText.textContent = 'OCR待機中...';
 
   try {
-    const result = await extractPdfTextAndRenderPreview(file);
+    const result = await extractPdfTextAndRenderPreview(file, readId);
 
     if (readId !== currentReadId) {
       return;
@@ -161,8 +223,10 @@ const updateFileMeta = async (file) => {
     fileStatus.textContent = '読み取り失敗';
     textStatus.textContent = 'PDF.jsでのテキスト抽出に失敗しました。';
     extractedText.textContent = 'PDFの形式や保護設定により、テキストを抽出できませんでした。';
-    previewStatus.textContent = `PDF画像化失敗: ${error.message || '不明なエラー'}`;
-    previewPlaceholder.textContent = `エラー: ${error.message || 'PDFを画像化できませんでした。'}`;
+    previewStatus.textContent = `PDF画像化失敗: ${getErrorMessage(error)}`;
+    previewPlaceholder.textContent = `エラー: ${getErrorMessage(error) || 'PDFを画像化できませんでした。'}`;
+    ocrStatus.textContent = 'OCR読み取り失敗';
+    ocrText.textContent = `OCRエラー: PDF画像プレビューを作成できなかったためOCRを実行できませんでした。${getErrorMessage(error)}`;
     previewPlaceholder.hidden = false;
     previewCanvas.hidden = true;
   }

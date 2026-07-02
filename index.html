@@ -104,9 +104,18 @@
         </div>
       </section>
 
-      <section class="panel text-panel" aria-labelledby="text-title">
+      <section class="panel ocr-panel" aria-labelledby="ocr-title">
         <div class="section-heading">
           <p class="step">Step 4</p>
+          <h2 id="ocr-title">OCR結果確認</h2>
+        </div>
+        <p id="ocr-status" class="ocr-status" aria-live="polite">PDFを選択すると、1ページ目の画像プレビューをブラウザ内OCRで読み取ります。</p>
+        <pre id="ocr-text" class="ocr-text">まだPDFが選択されていません。</pre>
+      </section>
+
+      <section class="panel text-panel" aria-labelledby="text-title">
+        <div class="section-heading">
+          <p class="step">Step 5</p>
           <h2 id="text-title">抽出テキスト確認</h2>
         </div>
         <p id="text-status" class="text-status" aria-live="polite">PDFを選択すると、ブラウザ内で抽出したテキストを表示します。</p>
@@ -116,7 +125,7 @@
       <section class="panel table-panel" aria-labelledby="table-title">
         <div class="section-heading with-action">
           <div>
-            <p class="step">Step 5</p>
+            <p class="step">Step 6</p>
             <h2 id="table-title">読み取り表データ（サンプル請求書形式）</h2>
           </div>
           <button class="secondary-button" type="button">再計算</button>
@@ -173,7 +182,7 @@
 
       <aside class="panel result-panel" aria-labelledby="result-title">
         <div class="section-heading">
-          <p class="step">Step 6</p>
+          <p class="step">Step 7</p>
           <h2 id="result-title">チェック結果</h2>
         </div>
         <div class="verdict verdict--ng">
