@@ -1,5 +1,4 @@
 import { GlobalWorkerOptions, getDocument } from 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.mjs';
-import { createWorker } from 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.esm.min.js';
 
 GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.mjs';
 
@@ -20,6 +19,20 @@ const ocrText = document.querySelector('#ocr-text');
 
 const numberFormatter = new Intl.NumberFormat('ja-JP');
 let currentReadId = 0;
+let tesseractLoader;
+
+const loadTesseractCreateWorker = async () => {
+  tesseractLoader ??= import('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.esm.min.js')
+    .then((module) => {
+      if (typeof module.createWorker !== 'function') {
+        throw new Error('Tesseract.jsのcreateWorkerを利用できません。');
+      }
+
+      return module.createWorker;
+    });
+
+  return tesseractLoader;
+};
 
 const getErrorMessage = (error) => error?.message || String(error) || '不明なエラー';
 
@@ -79,7 +92,24 @@ const runOcrOnPreviewCanvas = async (readId) => {
   ocrStatus.textContent = 'OCRで文字を読み取っています';
   ocrText.textContent = 'OCRで文字を読み取っています...';
 
+  let createWorker;
   let worker;
+
+  try {
+    createWorker = await loadTesseractCreateWorker();
+  } catch (error) {
+    if (readId !== currentReadId) {
+      return;
+    }
+
+    ocrStatus.textContent = 'OCRライブラリを読み込めません';
+    ocrText.textContent = `OCRライブラリを読み込めません。PDFアップロード、ファイル情報、ページ数、画像プレビューは利用できます。詳細: ${getErrorMessage(error)}`;
+    return;
+  }
+
+  if (readId !== currentReadId) {
+    return;
+  }
 
   try {
     worker = await createWorker('jpn+eng');
@@ -99,7 +129,7 @@ const runOcrOnPreviewCanvas = async (readId) => {
     ocrStatus.textContent = 'OCR読み取り失敗';
     ocrText.textContent = `OCRエラー: ${getErrorMessage(error)}`;
   } finally {
-    if (worker) {
+    if (worker && typeof worker.terminate === 'function') {
       await worker.terminate();
     }
   }
