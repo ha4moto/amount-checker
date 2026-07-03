@@ -375,8 +375,63 @@ th { color: var(--muted); font-size: 0.85rem; }
   overflow-wrap: anywhere;
 }
 
+.amount-candidates {
+  margin-top: 16px;
+}
+
+.amount-candidates__heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 10px;
+  color: var(--muted);
+}
+
+.amount-candidates h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.amount-candidates p {
+  margin: 6px 0 0;
+  line-height: 1.6;
+}
+
+.amount-candidates__heading span {
+  flex: 0 0 auto;
+  font-weight: 800;
+}
+
+.amount-table-wrap {
+  overflow-x: auto;
+}
+
+.amount-candidate-table {
+  min-width: 760px;
+}
+
+.amount-candidate-table th,
+.amount-candidate-table td {
+  vertical-align: top;
+}
+
+.amount-candidate-table td:last-child {
+  max-width: 520px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.amount-candidate-empty td {
+  color: var(--muted);
+  font-weight: 700;
+  text-align: center;
+}
+
 @media (max-width: 980px) {
   .text-panel { grid-column: 1; grid-row: auto; }
+  .amount-candidates__heading { flex-direction: column; }
+  .amount-candidates__heading span { flex: 1 1 auto; }
 }
 
 .preview-panel { grid-column: 1; }
