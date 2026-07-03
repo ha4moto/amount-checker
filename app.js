@@ -30,6 +30,11 @@ const tesseractWorkerOptions = {
   langPath: 'https://tessdata.projectnaptha.com/4.0.0',
 };
 
+const tesseractRecognitionParameters = {
+  tessedit_pageseg_mode: '11',
+  preserve_interword_spaces: '1',
+};
+
 const logTesseractModuleShape = (module) => {
   console.log('[Tesseract.js dynamic import] module keys:', Object.keys(module || {}));
   console.log('[Tesseract.js dynamic import] module:', module);
@@ -149,6 +154,7 @@ const runOcrOnPreviewCanvas = async (readId) => {
 
   try {
     worker = await createWorker('jpn+eng', 1, tesseractWorkerOptions);
+    await worker.setParameters(tesseractRecognitionParameters);
     const { data } = await worker.recognize(previewCanvas);
 
     if (readId !== currentReadId) {
