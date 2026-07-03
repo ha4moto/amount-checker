@@ -22,6 +22,7 @@ let currentReadId = 0;
 
 const TESSERACT_VERSION = '5.1.1';
 const TESSERACT_MODULE_URL = `https://cdn.jsdelivr.net/npm/tesseract.js@${TESSERACT_VERSION}/dist/tesseract.esm.min.js`;
+const OCR_IMAGE_SCALE = 2;
 let tesseractLoader;
 
 const tesseractWorkerOptions = {
@@ -71,6 +72,19 @@ const loadTesseractCreateWorker = async () => {
 };
 
 const getErrorMessage = (error) => error?.message || String(error) || '不明なエラー';
+
+const createScaledOcrCanvas = (sourceCanvas) => {
+  const ocrCanvas = document.createElement('canvas');
+  ocrCanvas.width = Math.max(1, Math.floor(sourceCanvas.width * OCR_IMAGE_SCALE));
+  ocrCanvas.height = Math.max(1, Math.floor(sourceCanvas.height * OCR_IMAGE_SCALE));
+
+  const context = ocrCanvas.getContext('2d');
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = 'high';
+  context.drawImage(sourceCanvas, 0, 0, ocrCanvas.width, ocrCanvas.height);
+
+  return ocrCanvas;
+};
 
 const resetExtractedText = () => {
   textStatus.textContent = 'PDFを選択すると、ブラウザ内で抽出したテキストを表示します。';
@@ -149,7 +163,8 @@ const runOcrOnPreviewCanvas = async (readId) => {
 
   try {
     worker = await createWorker('jpn+eng', 1, tesseractWorkerOptions);
-    const { data } = await worker.recognize(previewCanvas);
+    const ocrCanvas = createScaledOcrCanvas(previewCanvas);
+    const { data } = await worker.recognize(ocrCanvas);
 
     if (readId !== currentReadId) {
       return;
