@@ -120,6 +120,32 @@
         </div>
         <p id="text-status" class="text-status" aria-live="polite">PDFを選択すると、ブラウザ内で抽出したテキストを表示します。</p>
         <pre id="extracted-text" class="extracted-text">まだPDFが選択されていません。</pre>
+        <div class="amount-candidates" aria-live="polite">
+          <div class="amount-candidates__heading">
+            <div>
+              <h3>数値候補一覧</h3>
+              <p id="amount-status">PDFを選択すると、数量・単価・金額と思われる数値を一覧表示します。</p>
+            </div>
+            <span id="amount-source">利用テキスト: 未選択</span>
+          </div>
+          <div class="amount-table-wrap">
+            <table class="amount-candidate-table">
+              <thead>
+                <tr>
+                  <th>推定種別</th>
+                  <th>値</th>
+                  <th>行</th>
+                  <th>周辺テキスト</th>
+                </tr>
+              </thead>
+              <tbody id="amount-candidate-list">
+                <tr class="amount-candidate-empty">
+                  <td colspan="4">まだPDFが選択されていません。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </section>
 
       <section class="panel table-panel" aria-labelledby="table-title">
