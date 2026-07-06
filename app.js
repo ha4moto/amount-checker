@@ -11,6 +11,9 @@ const filePages = document.querySelector('#file-pages');
 const fileReady = document.querySelector('#file-ready');
 const extractedText = document.querySelector('#extracted-text');
 const textStatus = document.querySelector('#text-status');
+const amountStatus = document.querySelector('#amount-status');
+const amountSource = document.querySelector('#amount-source');
+const amountCandidateList = document.querySelector('#amount-candidate-list');
 const previewStatus = document.querySelector('#preview-status');
 const previewCanvas = document.querySelector('#pdf-preview');
 const previewPlaceholder = document.querySelector('#preview-placeholder');
@@ -19,6 +22,12 @@ const ocrText = document.querySelector('#ocr-text');
 
 const numberFormatter = new Intl.NumberFormat('ja-JP');
 let currentReadId = 0;
+let currentSourceTexts = {
+  pdfText: '',
+  ocrText: '',
+  pdfTextResolved: false,
+  ocrTextResolved: false,
+};
 
 const TESSERACT_VERSION = '5.1.1';
 const TESSERACT_MODULE_URL = `https://cdn.jsdelivr.net/npm/tesseract.js@${TESSERACT_VERSION}/dist/tesseract.esm.min.js`;
@@ -72,9 +81,36 @@ const loadTesseractCreateWorker = async () => {
 
 const getErrorMessage = (error) => error?.message || String(error) || '不明なエラー';
 
+const renderEmptyAmountCandidate = (message) => {
+  amountCandidateList.replaceChildren();
+
+  const row = document.createElement('tr');
+  row.className = 'amount-candidate-empty';
+
+  const cell = document.createElement('td');
+  cell.colSpan = 4;
+  cell.textContent = message;
+
+  row.append(cell);
+  amountCandidateList.append(row);
+};
+
+const resetAmountCandidates = () => {
+  currentSourceTexts = {
+    pdfText: '',
+    ocrText: '',
+    pdfTextResolved: false,
+    ocrTextResolved: false,
+  };
+  amountStatus.textContent = 'PDFを選択すると、数量・単価・金額候補を一覧表示します。';
+  amountSource.textContent = '利用テキスト: 未選択';
+  renderEmptyAmountCandidate('まだPDFが選択されていません。');
+};
+
 const resetExtractedText = () => {
   textStatus.textContent = 'PDFを選択すると、ブラウザ内で抽出したテキストを表示します。';
   extractedText.textContent = 'まだPDFが選択されていません。';
+  resetAmountCandidates();
 };
 
 const resetOcr = () => {
@@ -115,13 +151,250 @@ const formatFileSize = (bytes) => {
   return `${numberFormatter.format(Number(size.toFixed(digits)))} ${units[unitIndex]}`;
 };
 
-const formatPageText = (pageNumber, textContent) => {
-  const lines = textContent.items
-    .map((item) => item.str.trim())
-    .filter(Boolean);
+const getTextContentLines = (textContent) => textContent.items
+  .map((item) => item.str.trim())
+  .filter(Boolean);
+
+const formatPageText = (pageNumber, lines) => {
   const pageText = lines.join('\n');
 
   return [`--- ${pageNumber}ページ ---`, pageText || '（テキストを抽出できませんでした）'].join('\n');
+};
+
+const normalizeAmountText = (text) => text
+  .replace(/[０-９]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0xfee0))
+  .replace(/[，]/g, ',')
+  .replace(/[￥]/g, '¥')
+  .replace(/[−－]/g, '-');
+
+const parseCandidateNumber = (rawValue) => {
+  const normalized = normalizeAmountText(rawValue)
+    .replace(/[¥円\s,]/g, '');
+  const value = Number(normalized);
+
+  return Number.isFinite(value) ? value : null;
+};
+
+const hasAnyKeyword = (line, keywords) => keywords.some((keyword) => line.includes(keyword));
+
+const summaryLineKeywords = [
+  '小計',
+  '消費税',
+  '税額',
+  '税率',
+  '内税',
+  '外税',
+  '合計',
+  '総合計',
+  '請求額',
+  '請求金額',
+  '今回請求',
+  '税抜',
+  '税込',
+  '課税対象',
+];
+
+const shouldSkipSummaryLine = (line) => hasAnyKeyword(normalizeAmountText(line), summaryLineKeywords);
+
+const classifyAmountCandidate = ({ line, tokenIndex, tokens, value, rawValue }) => {
+  const normalizedLine = normalizeAmountText(line);
+
+  if (tokens.length >= 3) {
+    if (tokenIndex === 0 && Number.isInteger(value) && value > 0 && value <= 999) {
+      return '数量候補';
+    }
+
+    if (tokenIndex === tokens.length - 2 && value >= 100) {
+      return '単価候補';
+    }
+
+    if (tokenIndex === tokens.length - 1) {
+      return '金額候補';
+    }
+  }
+
+  if (hasAnyKeyword(normalizedLine, ['数量', '個数'])) {
+    return '数量候補';
+  }
+
+  if (hasAnyKeyword(normalizedLine, ['単価', '@', '＠'])) {
+    return '単価候補';
+  }
+
+  if (hasAnyKeyword(normalizedLine, ['金額'])) {
+    return '金額候補';
+  }
+
+  if (tokens.length === 2 && tokenIndex === 0 && Number.isInteger(value) && value > 0 && value <= 999) {
+    return '数量候補';
+  }
+
+  if (tokens.length === 2 && tokenIndex === 1) {
+    return '金額候補';
+  }
+
+  if (Number.isInteger(value) && value > 0 && value <= 999 && !rawValue.includes('¥')) {
+    return '数量候補';
+  }
+
+  if (rawValue.includes('¥') || rawValue.includes('円') || value >= 1000) {
+    return '金額候補';
+  }
+
+  return '金額候補';
+};
+
+const extractAmountCandidates = (text) => {
+  const numberPattern = /(?:[¥￥]\s*)?-?\d[\d,]*(?:\.\d+)?\s*円?/g;
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  return lines.flatMap((line, lineIndex) => {
+    if (shouldSkipSummaryLine(line)) {
+      return [];
+    }
+
+    const normalizedLine = normalizeAmountText(line);
+    const tokens = Array.from(normalizedLine.matchAll(numberPattern))
+      .filter((match) => normalizedLine[match.index + match[0].length] !== '%')
+      .map((match) => ({
+        rawValue: match[0].trim(),
+        value: parseCandidateNumber(match[0]),
+      }))
+      .filter((token) => token.value !== null);
+
+    return tokens.map((token, tokenIndex) => ({
+      type: classifyAmountCandidate({
+        line,
+        tokenIndex,
+        tokens,
+        value: token.value,
+        rawValue: token.rawValue,
+      }),
+      value: token.value,
+      rawValue: token.rawValue,
+      line,
+      lineNumber: lineIndex + 1,
+    }));
+  });
+};
+
+const getCandidateSet = (source, text) => ({
+  source,
+  text,
+  candidates: extractAmountCandidates(text),
+});
+
+const selectProcessingText = ({ pdfText, ocrText, pdfTextResolved, ocrTextResolved }) => {
+  const trimmedPdfText = pdfText.trim();
+  const trimmedOcrText = ocrText.trim();
+
+  if (trimmedPdfText) {
+    const pdfCandidateSet = getCandidateSet('PDF.js', trimmedPdfText);
+
+    if (pdfCandidateSet.candidates.length) {
+      return pdfCandidateSet;
+    }
+  }
+
+  if (!pdfTextResolved) {
+    return {
+      source: '',
+      text: '',
+      candidates: [],
+      status: 'waiting-pdf',
+    };
+  }
+
+  if (!ocrTextResolved) {
+    return {
+      source: '',
+      text: '',
+      candidates: [],
+      status: 'waiting-ocr',
+    };
+  }
+
+  if (trimmedOcrText) {
+    return getCandidateSet('OCR', trimmedOcrText);
+  }
+
+  if (trimmedPdfText) {
+    return getCandidateSet('PDF.js', trimmedPdfText);
+  }
+
+  return {
+    source: '',
+    text: '',
+    candidates: [],
+    status: 'empty',
+  };
+};
+
+const renderAmountCandidates = (readId) => {
+  if (readId !== currentReadId) {
+    return;
+  }
+
+  const selectedText = selectProcessingText(currentSourceTexts);
+
+  if (!selectedText.text) {
+    amountSource.textContent = '利用テキスト: PDF.js優先、候補不足時のみOCR';
+    if (selectedText.status === 'waiting-pdf') {
+      amountStatus.textContent = 'PDF.jsのテキスト抽出結果を待っています。';
+    } else if (selectedText.status === 'waiting-ocr') {
+      amountStatus.textContent = 'PDF.jsでは数量・単価・金額候補が十分に取れないため、OCR結果を待っています。';
+    } else {
+      amountStatus.textContent = 'PDF.jsとOCRのどちらからも数量・単価・金額候補を抽出できませんでした。';
+    }
+    renderEmptyAmountCandidate('まだ数量・単価・金額候補を抽出できていません。');
+    return;
+  }
+
+  const { candidates } = selectedText;
+  const displayedCandidates = candidates.slice(0, 80);
+  amountSource.textContent = `利用テキスト: ${selectedText.source}`;
+  amountStatus.textContent = candidates.length
+    ? `${numberFormatter.format(candidates.length)}件の数量・単価・金額候補を抽出しました。今回は整合性チェックは行いません。`
+    : `${selectedText.source}のテキストから数量・単価・金額候補を抽出できませんでした。`;
+
+  if (!candidates.length) {
+    renderEmptyAmountCandidate('数量・単価・金額候補は見つかりませんでした。');
+    return;
+  }
+
+  amountCandidateList.replaceChildren();
+
+  displayedCandidates.forEach((candidate) => {
+    const row = document.createElement('tr');
+
+    [
+      candidate.type,
+      numberFormatter.format(candidate.value),
+      `${numberFormatter.format(candidate.lineNumber)}行目`,
+      candidate.line,
+    ].forEach((text) => {
+      const cell = document.createElement('td');
+      cell.textContent = text;
+      row.append(cell);
+    });
+
+    amountCandidateList.append(row);
+  });
+
+  if (displayedCandidates.length < candidates.length) {
+    const row = document.createElement('tr');
+    row.className = 'amount-candidate-empty';
+
+    const cell = document.createElement('td');
+    cell.colSpan = 4;
+    cell.textContent = `表示は先頭${numberFormatter.format(displayedCandidates.length)}件までです。`;
+
+    row.append(cell);
+    amountCandidateList.append(row);
+  }
 };
 
 const runOcrOnPreviewCanvas = async (readId) => {
@@ -140,6 +413,8 @@ const runOcrOnPreviewCanvas = async (readId) => {
 
     ocrStatus.textContent = 'OCRライブラリを読み込めません';
     ocrText.textContent = `OCRライブラリを読み込めません。PDFアップロード、ファイル情報、ページ数、画像プレビュー、PDFテキスト抽出は利用できます。詳細: ${getErrorMessage(error)}`;
+    currentSourceTexts.ocrTextResolved = true;
+    renderAmountCandidates(readId);
     return;
   }
 
@@ -157,6 +432,9 @@ const runOcrOnPreviewCanvas = async (readId) => {
 
     ocrStatus.textContent = 'OCR読み取り完了';
     ocrText.textContent = data.text || 'OCRで文字を読み取れませんでした。';
+    currentSourceTexts.ocrText = data.text || '';
+    currentSourceTexts.ocrTextResolved = true;
+    renderAmountCandidates(readId);
   } catch (error) {
     if (readId !== currentReadId) {
       return;
@@ -164,6 +442,8 @@ const runOcrOnPreviewCanvas = async (readId) => {
 
     ocrStatus.textContent = 'OCR読み取り失敗';
     ocrText.textContent = `OCRエラー: ${getErrorMessage(error)}`;
+    currentSourceTexts.ocrTextResolved = true;
+    renderAmountCandidates(readId);
   } finally {
     if (worker && typeof worker.terminate === 'function') {
       await worker.terminate();
@@ -201,6 +481,7 @@ const extractPdfTextAndRenderPreview = async (file, readId) => {
   const buffer = await file.arrayBuffer();
   const pdf = await getDocument({ data: buffer }).promise;
   const pageTexts = [];
+  const sourceTextLines = [];
 
   try {
     await renderFirstPagePreview(pdf, readId);
@@ -209,12 +490,15 @@ const extractPdfTextAndRenderPreview = async (file, readId) => {
     for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
       const page = await pdf.getPage(pageNumber);
       const textContent = await page.getTextContent();
-      pageTexts.push(formatPageText(pageNumber, textContent));
+      const lines = getTextContentLines(textContent);
+      pageTexts.push(formatPageText(pageNumber, lines));
+      sourceTextLines.push(...lines);
     }
 
     return {
       pages: pdf.numPages,
       text: pageTexts.join('\n\n'),
+      sourceText: sourceTextLines.join('\n'),
     };
   } finally {
     await pdf.destroy();
@@ -243,6 +527,7 @@ const updateFileMeta = async (file) => {
   }
 
   resetPreview();
+  resetAmountCandidates();
   fileStatus.textContent = '読み取り中';
   fileName.textContent = file.name;
   fileSize.textContent = formatFileSize(file.size);
@@ -266,6 +551,9 @@ const updateFileMeta = async (file) => {
     fileStatus.textContent = '選択済み';
     textStatus.textContent = `${numberFormatter.format(result.pages)}ページ分のテキストを抽出しました。`;
     extractedText.textContent = result.text || 'テキストを抽出できませんでした。画像PDFの場合はOCRが必要です。';
+    currentSourceTexts.pdfText = result.sourceText;
+    currentSourceTexts.pdfTextResolved = true;
+    renderAmountCandidates(readId);
   } catch (error) {
     if (readId !== currentReadId) {
       return;
@@ -280,6 +568,9 @@ const updateFileMeta = async (file) => {
     previewPlaceholder.textContent = `エラー: ${getErrorMessage(error) || 'PDFを画像化できませんでした。'}`;
     ocrStatus.textContent = 'OCR読み取り失敗';
     ocrText.textContent = `OCRエラー: PDF画像プレビューを作成できなかったためOCRを実行できませんでした。${getErrorMessage(error)}`;
+    currentSourceTexts.pdfTextResolved = true;
+    currentSourceTexts.ocrTextResolved = true;
+    renderAmountCandidates(readId);
     previewPlaceholder.hidden = false;
     previewCanvas.hidden = true;
   }
