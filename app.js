@@ -102,7 +102,7 @@ const resetAmountCandidates = () => {
     pdfTextResolved: false,
     ocrTextResolved: false,
   };
-  amountStatus.textContent = 'PDFを選択すると、数量・単価・金額と思われる数値を一覧表示します。';
+  amountStatus.textContent = 'PDFを選択すると、数量・単価・金額候補を一覧表示します。';
   amountSource.textContent = '利用テキスト: 未選択';
   renderEmptyAmountCandidate('まだPDFが選択されていません。');
 };
@@ -152,8 +152,8 @@ const formatFileSize = (bytes) => {
 };
 
 const getTextContentLines = (textContent) => textContent.items
-    .map((item) => item.str.trim())
-    .filter(Boolean);
+  .map((item) => item.str.trim())
+  .filter(Boolean);
 
 const formatPageText = (pageNumber, lines) => {
   const pageText = lines.join('\n');
@@ -177,35 +177,60 @@ const parseCandidateNumber = (rawValue) => {
 
 const hasAnyKeyword = (line, keywords) => keywords.some((keyword) => line.includes(keyword));
 
+const summaryLineKeywords = [
+  '小計',
+  '消費税',
+  '税額',
+  '税率',
+  '内税',
+  '外税',
+  '合計',
+  '総合計',
+  '請求額',
+  '請求金額',
+  '今回請求',
+  '税抜',
+  '税込',
+  '課税対象',
+];
+
+const shouldSkipSummaryLine = (line) => hasAnyKeyword(normalizeAmountText(line), summaryLineKeywords);
+
 const classifyAmountCandidate = ({ line, tokenIndex, tokens, value, rawValue }) => {
   const normalizedLine = normalizeAmountText(line);
 
-  if (hasAnyKeyword(normalizedLine, ['合計', '総合計', '請求額', '請求金額', '今回請求'])) {
-    return '合計候補';
-  }
+  if (tokens.length >= 3) {
+    if (tokenIndex === 0 && Number.isInteger(value) && value > 0 && value <= 999) {
+      return '数量候補';
+    }
 
-  if (hasAnyKeyword(normalizedLine, ['小計', '税抜', '課税対象'])) {
-    return '小計候補';
-  }
+    if (tokenIndex === tokens.length - 2 && value >= 100) {
+      return '単価候補';
+    }
 
-  if (hasAnyKeyword(normalizedLine, ['消費税', '税額', '税率', '内税', '外税'])) {
-    return '消費税候補';
-  }
-
-  if (hasAnyKeyword(normalizedLine, ['単価', '@', '＠'])) {
-    return '単価候補';
+    if (tokenIndex === tokens.length - 1) {
+      return '金額候補';
+    }
   }
 
   if (hasAnyKeyword(normalizedLine, ['数量', '個数'])) {
     return '数量候補';
   }
 
-  if (tokens.length >= 3 && tokenIndex === tokens.length - 1) {
+  if (hasAnyKeyword(normalizedLine, ['単価', '@', '＠'])) {
+    return '単価候補';
+  }
+
+  if (hasAnyKeyword(normalizedLine, ['金額'])) {
     return '金額候補';
   }
 
-  if (tokens.length >= 3 && tokenIndex === tokens.length - 2 && value >= 100) {
-    return '単価候補';
+  if (tokens.length === 2 && tokenIndex === 0 && Number.isInteger(value) && value > 0 && value <= 999) {
+    return '数量候補';
+  }
+
+  if (tokens.length === 2 && tokenIndex === 1) {
+    return '金額候補';
   }
 
   if (Number.isInteger(value) && value > 0 && value <= 999 && !rawValue.includes('¥')) {
@@ -216,7 +241,7 @@ const classifyAmountCandidate = ({ line, tokenIndex, tokens, value, rawValue }) 
     return '金額候補';
   }
 
-  return '数値候補';
+  return '金額候補';
 };
 
 const extractAmountCandidates = (text) => {
@@ -227,6 +252,10 @@ const extractAmountCandidates = (text) => {
     .filter(Boolean);
 
   return lines.flatMap((line, lineIndex) => {
+    if (shouldSkipSummaryLine(line)) {
+      return [];
+    }
+
     const normalizedLine = normalizeAmountText(line);
     const tokens = Array.from(normalizedLine.matchAll(numberPattern))
       .filter((match) => normalizedLine[match.index + match[0].length] !== '%')
@@ -252,24 +281,55 @@ const extractAmountCandidates = (text) => {
   });
 };
 
-const selectProcessingText = ({ pdfText, ocrText }) => {
-  if (pdfText.trim()) {
+const getCandidateSet = (source, text) => ({
+  source,
+  text,
+  candidates: extractAmountCandidates(text),
+});
+
+const selectProcessingText = ({ pdfText, ocrText, pdfTextResolved, ocrTextResolved }) => {
+  const trimmedPdfText = pdfText.trim();
+  const trimmedOcrText = ocrText.trim();
+
+  if (trimmedPdfText) {
+    const pdfCandidateSet = getCandidateSet('PDF.js', trimmedPdfText);
+
+    if (pdfCandidateSet.candidates.length) {
+      return pdfCandidateSet;
+    }
+  }
+
+  if (!pdfTextResolved) {
     return {
-      source: 'PDF.js',
-      text: pdfText,
+      source: '',
+      text: '',
+      candidates: [],
+      status: 'waiting-pdf',
     };
   }
 
-  if (currentSourceTexts.pdfTextResolved && ocrText.trim()) {
+  if (!ocrTextResolved) {
     return {
-      source: 'OCR',
-      text: ocrText,
+      source: '',
+      text: '',
+      candidates: [],
+      status: 'waiting-ocr',
     };
+  }
+
+  if (trimmedOcrText) {
+    return getCandidateSet('OCR', trimmedOcrText);
+  }
+
+  if (trimmedPdfText) {
+    return getCandidateSet('PDF.js', trimmedPdfText);
   }
 
   return {
     source: '',
     text: '',
+    candidates: [],
+    status: 'empty',
   };
 };
 
@@ -281,27 +341,27 @@ const renderAmountCandidates = (readId) => {
   const selectedText = selectProcessingText(currentSourceTexts);
 
   if (!selectedText.text) {
-    amountSource.textContent = '利用テキスト: PDF.js優先、未取得時のみOCR';
-    if (!currentSourceTexts.pdfTextResolved) {
+    amountSource.textContent = '利用テキスト: PDF.js優先、候補不足時のみOCR';
+    if (selectedText.status === 'waiting-pdf') {
       amountStatus.textContent = 'PDF.jsのテキスト抽出結果を待っています。';
-    } else if (!currentSourceTexts.ocrTextResolved) {
-      amountStatus.textContent = 'PDF.jsで金額候補を抽出できない場合は、OCR結果を待ってから一覧表示します。';
+    } else if (selectedText.status === 'waiting-ocr') {
+      amountStatus.textContent = 'PDF.jsでは数量・単価・金額候補が十分に取れないため、OCR結果を待っています。';
     } else {
-      amountStatus.textContent = 'PDF.jsとOCRのどちらからも金額候補を抽出できませんでした。';
+      amountStatus.textContent = 'PDF.jsとOCRのどちらからも数量・単価・金額候補を抽出できませんでした。';
     }
-    renderEmptyAmountCandidate('まだ金額候補を抽出できていません。');
+    renderEmptyAmountCandidate('まだ数量・単価・金額候補を抽出できていません。');
     return;
   }
 
-  const candidates = extractAmountCandidates(selectedText.text);
+  const { candidates } = selectedText;
   const displayedCandidates = candidates.slice(0, 80);
   amountSource.textContent = `利用テキスト: ${selectedText.source}`;
   amountStatus.textContent = candidates.length
-    ? `${numberFormatter.format(candidates.length)}件の数値候補を抽出しました。今回は整合性チェックは行いません。`
-    : `${selectedText.source}のテキストから金額候補を抽出できませんでした。`;
+    ? `${numberFormatter.format(candidates.length)}件の数量・単価・金額候補を抽出しました。今回は整合性チェックは行いません。`
+    : `${selectedText.source}のテキストから数量・単価・金額候補を抽出できませんでした。`;
 
   if (!candidates.length) {
-    renderEmptyAmountCandidate('金額候補は見つかりませんでした。');
+    renderEmptyAmountCandidate('数量・単価・金額候補は見つかりませんでした。');
     return;
   }
 
